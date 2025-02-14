@@ -1,0 +1,148 @@
+#!/bin/bash
+
+if [ "$#" -ne 2 ]; then
+    echo "Usage: $0 <TestClassName> <endpoint>"
+    echo "Example: $0 UserControllerTest users"
+    exit 1
+fi
+
+FILENAME=$1
+ENDPOINT=$2
+# Remove leading slash if present
+ENDPOINT=${ENDPOINT#/}
+# Convert endpoint to PascalCase for class name
+CLASS_NAME=$(echo "$ENDPOINT" | sed -E 's/(^|_|-|\/)([a-z])/\U\2/g')
+
+cat << EOF > "${FILENAME}.java"
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+@WebMvcTest(${CLASS_NAME}Controller.class)
+class ${FILENAME} {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @MockBean
+    private ${CLASS_NAME}Service service;
+
+    private static final String ENDPOINT = "/${ENDPOINT}";
+
+    @Test
+    void create_${CLASS_NAME}_ShouldReturnCreated() throws Exception {
+        // Given
+        ${CLASS_NAME}Request request = new ${CLASS_NAME}Request();
+        ${CLASS_NAME}Response expectedResponse = new ${CLASS_NAME}Response();
+        when(service.create(any(${CLASS_NAME}Request.class))).thenReturn(expectedResponse);
+
+        // When
+        ResultActions result = mockMvc.perform(post(ENDPOINT)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)));
+
+        // Then
+        result.andExpect(status().isCreated())
+              .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+              .andExpect(jsonPath("\$.id").exists());
+
+        verify(service).create(any(${CLASS_NAME}Request.class));
+    }
+
+    @Test
+    void get_${CLASS_NAME}_ShouldReturnOk() throws Exception {
+        // Given
+        Long id = 1L;
+        ${CLASS_NAME}Response expectedResponse = new ${CLASS_NAME}Response();
+        when(service.getById(id)).thenReturn(expectedResponse);
+
+        // When
+        ResultActions result = mockMvc.perform(get(ENDPOINT + "/{id}", id)
+                .contentType(MediaType.APPLICATION_JSON));
+
+        // Then
+        result.andExpect(status().isOk())
+              .andExpect(content().contentType(MediaType.APPLICATION_JSON));
+
+        verify(service).getById(id);
+    }
+
+    @Test
+    void update_${CLASS_NAME}_ShouldReturnOk() throws Exception {
+        // Given
+        Long id = 1L;
+        ${CLASS_NAME}Request request = new ${CLASS_NAME}Request();
+        ${CLASS_NAME}Response expectedResponse = new ${CLASS_NAME}Response();
+        when(service.update(eq(id), any(${CLASS_NAME}Request.class))).thenReturn(expectedResponse);
+
+        // When
+        ResultActions result = mockMvc.perform(put(ENDPOINT + "/{id}", id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)));
+
+        // Then
+        result.andExpect(status().isOk())
+              .andExpect(content().contentType(MediaType.APPLICATION_JSON));
+
+        verify(service).update(eq(id), any(${CLASS_NAME}Request.class));
+    }
+
+    @Test
+    void delete_${CLASS_NAME}_ShouldReturnNoContent() throws Exception {
+        // Given
+        Long id = 1L;
+
+        // When
+        ResultActions result = mockMvc.perform(delete(ENDPOINT + "/{id}", id));
+
+        // Then
+        result.andExpect(status().isNoContent());
+
+        verify(service).delete(id);
+    }
+
+    @Test
+    void create_${CLASS_NAME}_WithInvalidRequest_ShouldReturnBadRequest() throws Exception {
+        // Given
+        ${CLASS_NAME}Request invalidRequest = new ${CLASS_NAME}Request();
+        
+        // When
+        ResultActions result = mockMvc.perform(post(ENDPOINT)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(invalidRequest)));
+
+        // Then
+        result.andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void get_${CLASS_NAME}_NotFound_ShouldReturnNotFound() throws Exception {
+        // Given
+        Long id = 999L;
+        when(service.getById(id)).thenThrow(new ResourceNotFoundException("Not found"));
+
+        // When
+        ResultActions result = mockMvc.perform(get(ENDPOINT + "/{id}", id));
+
+        // Then
+        result.andExpect(status().isNotFound());
+    }
+}
+EOF
+
+echo "Generated test file: ${FILENAME}.java"
